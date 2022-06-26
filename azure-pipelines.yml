@@ -9,10 +9,61 @@ trigger:
 pool:
   vmImage: ubuntu-latest
 
-steps:
-- script: echo Hello, world!
-  displayName: 'Run a one-line script'
+variables:
+  CONTAINER_NAME:  unityci/editor:2021.3.0f1-android-1 
+  BUILD_NAME: car-collision-comparsion
+  UNITY_ACTIVATION_FILE: ./unity3d.alf
+  IMAGE: unityci/editor # https://hub.docker.com/r/unityci/editor
+  IMAGE_VERSION: 1 # This will automatically use latest v1.x.x, see https://github.com/game-ci/docker/releases
+  UNITY_DIR: $(Build.Repository.LocalPath) # this needs to be an absolute path. Defaults to the root of your tree.
+  # You can expose this in Unity via Application.version
+  VERSION_NUMBER_VAR: $CI_COMMIT_REF_SLUG-$CI_PIPELINE_ID-$CI_JOB_ID
+  VERSION_BUILD_VAR: $CI_PIPELINE_IID
 
-- script: |
-    ls -la
-  displayName: 'Run a multi-line script'
+stages:
+# - stage: 'Prepare'
+#   displayName: 'Read unity version'
+#   jobs:
+#   - job: 'get_unity_version_job'
+#     container:  ubuntu:latest
+#     steps:                    
+#     - bash: echo "##vso[task.setvariable variable=UNITY_VERSION;isOutput=true]$(cat $UNITY_DIR/ProjectSettings/ProjectVersion.txt | grep "m_EditorVersion:.*" | awk '{ print $2}')"
+#       displayName: Read unity version from ProjectVersion.txt file and store in UNITY_VERSION
+#       name: get_unity_version_step    
+#     - script: echo Unity version found $(get_unity_version_step.UNITY_VERSION)
+#       displayName: Printing unity version
+- stage: 'BuildAndroid'
+  displayName: 'Build an android apk'
+#  dependsOn: 'Prepare'
+  #condition: ne(stageDependencies.Prepare.get_unity_version_job.outputs['get_unity_version_step.UNITY_VERSION'], '') 
+  jobs:
+  - job: 'Android'
+    variables:
+     UNITY_VERSION: 2021.3.0f1
+#      UNITY_VERSION: $[ stageDependencies.Prepare.get_unity_version_job.outputs['get_unity_version_step.UNITY_VERSION'] ]        
+      
+    container: $(IMAGE):$(UNITY_VERSION)-base-$(IMAGE_VERSION)
+    steps:        
+    - script: |
+        set -ex
+        echo $HOME
+        w
+        echo $USER
+        whoami
+        who
+      displayName: Show info about user 
+    - script: |
+        set -ex        
+        chmod +x ./.ci/create_unity_license_file.sh         
+        ./.ci/create_unity_license_file.sh
+      displayName:  Create unity license file from license stored in UNITY_LICENSE secret
+    - script: |
+        set -ex
+        chmod +x ./.ci/create_android_keystore_file.sh 
+        ./.ci/create_android_keystore_file.sh
+      displayName: Create a keystore file from the ANDROID_KEYSTORE_BASE64 secret
+    - script: |
+        set -ex
+        chmod +x ./.ci/build.sh
+        ./.ci/build.sh
+      displayName: Build
